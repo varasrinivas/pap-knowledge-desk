@@ -99,6 +99,22 @@ def drafts_generate():
     return draft_from_profile()
 
 
+@base.post("/api/drafts/reset")
+def drafts_reset():
+    """Back to 'no drafts' (pending and approved removed, kb_drafts emptied): for demos and screenshots."""
+    from desk.knowledge_fix import reset_drafts
+    reset_drafts()
+    return {"ok": True}
+
+
+@base.post("/api/admin/clear-desk")
+def clear_desk():
+    """Remove tickets and access requests the desk created (the 15,000-incident history stays)."""
+    from desk.evaluate import clear_desk_tickets
+    clear_desk_tickets()
+    return {"ok": True}
+
+
 @base.post("/api/drafts/{file}/approve")
 def drafts_approve(file: str):
     from desk.knowledge_fix import approve

@@ -23,7 +23,7 @@ class Embedder:
     def __init__(self, model: str = config.EMBED_MODEL):
         from fastembed import TextEmbedding
         self.name = model
-        self.model = TextEmbedding(model, cache_dir=str(config.MODEL_CACHE))
+        self.model = TextEmbedding(model, cache_dir=str(config.MODEL_CACHE), threads=config.EMBED_THREADS)   # None = all cores
         self.tokenizer = self.model.model.tokenizer          # the model's own WordPiece tokenizer (truncates at 512)
 
     def docs(self, texts: list[str], batch_size: int = config.EMBED_BATCH) -> np.ndarray:

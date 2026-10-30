@@ -27,6 +27,7 @@ LIVE_TICKER_SECONDS = int(os.getenv("DESK_LIVE_TICKER_SECONDS", "300"))   # one 
 EMBED_MODEL = os.getenv("DESK_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_DIM = 384
 EMBED_BATCH = int(os.getenv("DESK_EMBED_BATCH", "16"))      # measured: small batches pad less, so they are faster on CPU
+EMBED_THREADS = int(os.getenv("DESK_EMBED_THREADS", "0")) or None    # cap ONNX threads (and with them memory) on small machines
 COLLECTION_SUFFIX = os.getenv("DESK_COLLECTION_SUFFIX", "v1")   # a new embedding model means a new suffix, not an overwrite
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "fixture")             # fixture | anthropic

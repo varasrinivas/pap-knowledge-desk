@@ -9,6 +9,7 @@ import json
 import re
 
 REQ = re.compile(r"\bIR-\d{4}-\d{5}\b")
+GENERIC_RES = re.compile(r"^(Resolved|Fixed|Assisted caller|Issue resolved|Caller confirmed|Resolved per caller|Explained to caller)", re.I)
 LIVE_TERMS = ["fax", "upload", "scanning", "attach", "export", "login", "sign in", "slow", "down", "letter", "timeline", "wizard"]
 SERVICE_WORDS = {"mri": "IMAGING", "ct ": "IMAGING", "imaging": "IMAGING", "ortho": "ORTHO_SURGERY", "knee": "ORTHO_SURGERY",
                  "cardio": "CARDIOLOGY", "heart": "CARDIOLOGY", "oncology": "ONCOLOGY", "radiation": "ONCOLOGY", "dme": "HOME_HEALTH_DME",
@@ -116,14 +117,16 @@ def compose(e: dict) -> str:
     for f in e.get("findings", []):
         lines.append(f"{f['text']} [{f['source']}]")
     docs = e.get("doc_hits", [])
-    if docs and route in ("resolve", "gap_resolve", "link_live", "raise") and e.get("use_docs", True):
+    if docs and route in ("resolve", "raise") and e.get("use_docs", True):          # an outage or a gap is not answered by these docs
         for h in docs[:2]:
             lines.append(f"{_snippet(h['text'])} [{h['meta']['source_id']}: {h['meta'].get('title', '')}]")
     if route == "gap_resolve":
         lines.append("No document covers this yet, so here is what resolved the same problem for other offices:")
-        for h in e.get("incident_hits", [])[:2]:
-            res = h["text"].split("Resolution:", 1)[-1].strip()
-            lines.append(f"- {res} [{h['id']}]")
+        said = [(h["text"].split("Resolution:", 1)[-1].strip(), h["id"]) for h in e.get("incident_hits", [])]
+        said = [(r, i) for r, i in said if not GENERIC_RES.match(r)] or said             # skip "Resolved." when better exists
+        said = list({r: (r, i) for r, i in reversed(said)}.values())[::-1]               # one line per distinct resolution
+        for res, iid in said[:2]:
+            lines.append(f"- {res} [{iid}]")
         lines.append("I have flagged this as a knowledge gap so the team can write it down.")
     if route == "link_live":
         m = e["live"]["major_incidents"][0]
@@ -146,6 +149,7 @@ def compose(e: dict) -> str:
 def _snippet(text: str, n: int = 260) -> str:
     body = text.split("\n", 2)[-1]
     body = re.sub(r"^#+ .*$", "", body, flags=re.M)
+    body = re.sub(r"\*\*|`|^\s*[-*]\s+|^\s*\d+\.\s+", "", body, flags=re.M)          # plain text: no markdown in a chat answer
     body = re.sub(r"\s+", " ", body).strip()
     return body[:n].rsplit(" ", 1)[0] + ("..." if len(body) > n else "")
 

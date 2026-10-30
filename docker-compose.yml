@@ -5,6 +5,9 @@
 #   portal      Prior Auth Portal mock (users, permissions, routing)  host port 8181
 #   ingest      one-shot: build RAG -> profile -> calibrate gates; exits 0
 #   agent       Agno workflow + UI + AgentOS endpoints                host port 8180  (starts after ingest succeeds)
+#
+# Memory caps (mem_limit) keep the whole stack under ~4.5 GB so it runs beside an IDE on a 16 GB laptop. The ingest job
+# embeds with 2 ONNX threads (DESK_EMBED_THREADS): slower first run, much lower peak memory. Raise both on a bigger machine.
 
 x-desk: &desk
   build: .
@@ -22,6 +25,7 @@ services:
   chroma:
     image: chromadb/chroma:1.5.9
     ports: ["8183:8000"]
+    mem_limit: 1g
     volumes:
       - chroma-data:/data
     restart: unless-stopped
@@ -30,6 +34,7 @@ services:
     <<: *desk
     command: ["uvicorn", "desk.services.servicenow:app", "--host", "0.0.0.0", "--port", "8182"]
     ports: ["8182:8182"]
+    mem_limit: 512m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8182/health', timeout=3)"]
       interval: 5s
@@ -42,6 +47,7 @@ services:
     <<: *desk
     command: ["uvicorn", "desk.services.portal:app", "--host", "0.0.0.0", "--port", "8181"]
     ports: ["8181:8181"]
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8181/health', timeout=3)"]
       interval: 5s
@@ -52,6 +58,11 @@ services:
   ingest:
     <<: *desk
     command: ["python", "-m", "desk", "ingest"]
+    mem_limit: 1536m
+    environment:
+      <<: *env
+      DESK_EMBED_THREADS: "2"
+      OMP_NUM_THREADS: "2"
     depends_on:
       servicenow: {condition: service_healthy}
       portal: {condition: service_healthy}
@@ -62,11 +73,13 @@ services:
     <<: *desk
     command: ["uvicorn", "desk.app:app", "--host", "0.0.0.0", "--port", "8180"]
     ports: ["8180:8180"]
+    mem_limit: 1280m
     env_file:
       - path: .env
         required: false                             # LLM_PROVIDER / ANTHROPIC_API_KEY / LLM_MODEL for the live toggle
     environment:
       <<: *env
+      DESK_EMBED_THREADS: "2"
     depends_on:
       ingest: {condition: service_completed_successfully}
     healthcheck:
