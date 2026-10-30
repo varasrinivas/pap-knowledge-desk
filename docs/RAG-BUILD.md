@@ -4,6 +4,8 @@
 writes the full transcript to `/runtime/INGEST-REPORT.md` (in the UI: Reports → RAG build report). The numbers below come from a
 real run on the fixture data. Your timings will differ: embedding speed depends on the CPU.
 
+> The numbers in this page come from the first development run on the laptop. The Docker run produces slightly different counts (a different generation of the history); the module m39 quotes the Docker run, and `/runtime/INGEST-REPORT.md` always holds your own.
+
 The pipeline is six files in `desk/rag/`, one per stage:
 
 ```

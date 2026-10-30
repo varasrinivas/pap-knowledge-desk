@@ -219,10 +219,15 @@ def run(explain: bool = True) -> dict:
         km = KMeans(n_clusters=k_best, n_init=10, random_state=config.SEED).fit(Xg)
         cents = km.cluster_centers_ / np.linalg.norm(km.cluster_centers_, axis=1, keepdims=True)
         parent = list(range(k_best))                                  # merge clusters whose centres point the same way
+        def root(x):
+            while parent[x] != x:
+                x = parent[x]
+            return x
         for a in range(k_best):
             for b in range(a + 1, k_best):
                 if float(cents[a] @ cents[b]) > MERGE_COS:
-                    parent[b] = parent[a]
+                    parent[root(b)] = root(a)                                 # union-find: chains a~b~c end in one cluster
+        parent = [root(x) for x in range(k_best)]
         km.labels_ = np.array([parent[l] for l in km.labels_])
         merged = k_best - len(set(parent))
         say(f"\n4 CLUSTERS    {len(gap_idx):,} knowledge-gap incidents · k chosen by silhouette: "

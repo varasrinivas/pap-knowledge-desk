@@ -3,7 +3,7 @@
 - One collection per source, named '<source>_<suffix>' (suffix v1). A new embedding model gets a new suffix; you never
   mix vectors from two models in one collection.
 - Collection config: cosine space (vectors are unit length) and HNSW build/search parameters set explicitly.
-- Deterministic ids: '<source_id>#<section index>.<part>' and a content hash in the metadata. A rerun embeds only chunks
+- Deterministic ids: '<source_id>#<running chunk index>' (incidents: the incident number) and a content hash in the metadata. A rerun embeds only chunks
   whose hash changed, upserts them, and deletes ids that no longer exist in the source: rebuilds are cheap and safe.
 - Upserts go in batches (Chroma caps a single request's size).
 """

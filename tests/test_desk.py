@@ -21,7 +21,7 @@ def test_generator_is_deterministic_and_complete():
 def test_generator_slots_agree_between_problem_and_resolution():
     h, k, _ = generate(n=3000)
     pairs = [(r["short_description"].split("PI-DOC-")[1][:3], r["close_notes"]) for r in h
-             if k[r["number"]]["topic"] == "pend_code_meaning" and "PI-DOC" in r["short_description"] and "PI-DOC" in r["close_notes"]]
+             if k[r["number"]]["topic"] == "pend_code_meaning" and "PI-DOC-" in r["short_description"] and "PI-DOC" in r["close_notes"]]
     agree = sum(f"PI-DOC-{code}" in notes for code, notes in pairs)
     assert pairs and agree / len(pairs) > 0.9          # the rest carry a deliberate typo ("PI-DOC-050")
 
