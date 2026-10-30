@@ -1,0 +1,81 @@
+# The Knowledge Desk: five services, two volumes. Start with start.cmd / start.sh (or: docker compose up -d --build).
+#
+#   chroma      vector database (official image)                    host port 8183 -> 8000   volume chroma-data:/data
+#   servicenow  ServiceNow Table API mock, 15,000 incidents in SQLite host port 8182          volume desk-runtime:/runtime
+#   portal      Prior Auth Portal mock (users, permissions, routing)  host port 8181
+#   ingest      one-shot: build RAG -> profile -> calibrate gates; exits 0
+#   agent       Agno workflow + UI + AgentOS endpoints                host port 8180  (starts after ingest succeeds)
+
+x-desk: &desk
+  build: .
+  image: knowledge-desk:local
+  environment: &env
+    DESK_RUNTIME_DIR: /runtime
+    PORTAL_API: http://portal:8181
+    SERVICENOW_API: http://servicenow:8182
+    CHROMA_HOST: chroma
+    CHROMA_PORT: "8000"
+  volumes:
+    - desk-runtime:/runtime
+
+services:
+  chroma:
+    image: chromadb/chroma:1.5.9
+    ports: ["8183:8000"]
+    volumes:
+      - chroma-data:/data
+    restart: unless-stopped
+
+  servicenow:
+    <<: *desk
+    command: ["uvicorn", "desk.services.servicenow:app", "--host", "0.0.0.0", "--port", "8182"]
+    ports: ["8182:8182"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8182/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+
+  portal:
+    <<: *desk
+    command: ["uvicorn", "desk.services.portal:app", "--host", "0.0.0.0", "--port", "8181"]
+    ports: ["8181:8181"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8181/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  ingest:
+    <<: *desk
+    command: ["python", "-m", "desk", "ingest"]
+    depends_on:
+      servicenow: {condition: service_healthy}
+      portal: {condition: service_healthy}
+      chroma: {condition: service_started}        # ingest itself waits for Chroma's /api/v2/heartbeat
+    restart: "no"
+
+  agent:
+    <<: *desk
+    command: ["uvicorn", "desk.app:app", "--host", "0.0.0.0", "--port", "8180"]
+    ports: ["8180:8180"]
+    env_file:
+      - path: .env
+        required: false                             # LLM_PROVIDER / ANTHROPIC_API_KEY / LLM_MODEL for the live toggle
+    environment:
+      <<: *env
+    depends_on:
+      ingest: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8180/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+  desk-runtime:

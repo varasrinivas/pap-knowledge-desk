@@ -1,0 +1,14 @@
+# Verified on PyPI 2026-10-30 (see docs/VERSIONS.md). One image runs every desk service.
+agno==3.1.12
+chromadb==1.5.9
+fastembed==0.9.1
+scikit-learn==1.9.1
+numpy>=2.0,<3
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+pydantic==2.14.2
+sqlalchemy[asyncio]==2.1.6
+aiosqlite>=0.21
+anthropic==2.3.0
+python-multipart>=0.0.20

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge Desk</title>
+<style>
+:root{--paper:#F7F3EC;--ink:#1E2229;--muted:#6B7280;--resolve:#1F6F5B;--raise:#D9583B;--decide:#C98A1B;--tool:#3B5B7E;--rule:#E2DCD0;--card:#FFFDF9;--gap:#8B5CF6}
+@media (prefers-color-scheme:dark){:root{--paper:#15171A;--ink:#ECE7DE;--muted:#9AA0A8;--resolve:#4FB596;--raise:#F08C73;--decide:#E8B04B;--tool:#8FB3D9;--rule:#2B3037;--card:#1C1F24;--gap:#B69CFA}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+h1{font:600 20px Georgia,serif;margin:0}nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:1px solid var(--rule);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer}
+nav button.on{background:var(--ink);color:var(--paper)}
+#persona{margin-left:auto;padding:6px;border-radius:6px;border:1px solid var(--rule);background:var(--card);color:var(--ink)}
+main{padding:16px 20px;max-width:1200px;margin:auto}section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1;min-width:280px}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;color:#fff}
+.r-resolve{background:var(--resolve)}.r-raise,.r-raise_access{background:var(--raise)}.r-link_live{background:var(--tool)}.r-dedup{background:var(--decide)}
+.r-gap_resolve{background:var(--gap)}.r-refuse,.r-clarify{background:var(--muted)}
+.msg{white-space:pre-wrap;margin:8px 0}.muted{color:var(--muted);font-size:13px}code,pre{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+pre{white-space:pre-wrap;background:var(--paper);padding:10px;border-radius:8px;border:1px solid var(--rule);max-height:420px;overflow:auto}
+textarea,input[type=text]{width:100%;padding:10px;border-radius:8px;border:1px solid var(--rule);background:var(--card);color:var(--ink);font:inherit}
+button.go{background:var(--resolve);color:#fff;border:0;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+button.warn{background:var(--raise)}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:4px 6px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+.bar{height:10px;border-radius:4px;background:var(--tool)}.samples button{margin:3px;font-size:12px;background:var(--paper);border:1px solid var(--rule);color:var(--ink);border-radius:6px;padding:4px 8px;cursor:pointer}
+.gate{position:relative;height:12px;background:var(--rule);border-radius:4px}.gate i{position:absolute;top:-3px;width:2px;height:18px;background:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Knowledge Desk</h1>
+  <nav id="tabs"></nav>
+  <select id="persona" aria-label="Signed-in persona"></select>
+</header>
+<main>
+<section id="chat" class="on">
+  <div class="card">
+    <textarea id="q" rows="2" placeholder="Ask as the selected persona, e.g. 'My cardiology request went to the Northeast queue, but we're in Dallas.'"></textarea>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button class="go" id="send">Ask</button><span class="muted" id="busy"></span></div>
+    <div class="samples" id="samples"></div>
+  </div>
+  <div id="answers"></div>
+</section>
+<section id="ops">
+  <div class="row"><div class="card"><b>Root-cause buckets</b> <span class="muted" id="profmeta"></span><div id="buckets"></div></div>
+  <div class="card"><b>Live: last 12 hours</b> <span class="muted">(open incidents, newest first)</span><div id="live"></div></div></div>
+  <div class="card"><b>Weekly incidents by bucket</b><div id="weekly"></div></div>
+  <div class="row"><div class="card"><b>Knowledge-gap clusters</b> <span class="muted">(candidate articles)</span><div id="clusters"></div></div>
+  <div class="card"><b>Contradictions</b> <span class="muted">(resolutions vs the document they matched)</span><div id="contra"></div></div></div>
+</section>
+<section id="rag">
+  <div class="card"><b>Collections</b><div id="cols"></div></div>
+  <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="src"></select><input type="text" id="rq" style="flex:1" value="how do I upload clinical notes to a request"><button class="go" id="rgo">Search</button></div>
+  <p class="muted">Vector (cosine), keyword (BM25) and hybrid (reciprocal-rank fusion) side by side. The gate is this source's calibrated "has an answer" line.</p>
+  <div id="rres"></div></div>
+</section>
+<section id="fix">
+  <div class="card"><button class="go" id="gen">Draft articles from the gap clusters</button> <span class="muted">Drafts wait here until a person approves them; approval re-indexes kb_drafts.</span></div>
+  <div id="drafts"></div>
+</section>
+<section id="reports">
+  <div class="card"><button class="go" data-r="ingest">RAG build report</button> <button class="go" data-r="profile">Profile report</button> <button class="go" data-r="eval">Scenario eval</button>
+  <pre id="rep">Pick a report.</pre></div>
+</section>
+</main>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const TABS = {chat:"Chat", ops:"Ops dashboard", rag:"RAG inspector", fix:"Knowledge fix", reports:"Reports"};
+const SAMPLES = [["u-priya","My cardiology request went to the Northeast queue, but we're in Dallas."],["u-nora","Fax intake isn't working today."],
+ ["u-priya","I can't see the Submit button on my requests anymore."],["u-anita","Locked out after changing phones."],
+ ["u-liam","How do I add a second servicing provider to an existing request?"],["u-anita","My request IR-2026-00517 was pended with reason PI-DOC-004. What do I send?"],
+ ["u-owen","Why do I keep getting oncology cases? I'm on the ortho team."],["u-marcus","Is anything wrong with the portal right now in South Central?"],
+ ["u-priya","Should this patient get the MRI or physical therapy first?"]];
+const api = async (p, o) => { const r = await fetch(p, o); if (!r.ok) throw new Error(await r.text()); return r.headers.get("content-type")?.includes("json") ? r.json() : r.text(); };
+const post = (p, b) => api(p, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(b||{})});
+Object.entries(TABS).forEach(([k,v]) => { const b = document.createElement("button"); b.textContent = v; b.onclick = () => show(k); b.id = "t-"+k; $("#tabs").append(b); });
+function show(k){ document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id===k)); document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.id==="t-"+k));
+  try{localStorage.setItem("tab",k)}catch(e){} ({ops:loadOps, rag:loadRag, fix:loadDrafts})[k]?.(); }
+(async () => { const ps = await api("/api/personas"); $("#persona").innerHTML = ps.map(p => `<option value="${p.userId}">${esc(p.displayName)} · ${p.role} · ${p.region}</option>`).join("");
+  $("#persona").value = "u-priya"; let t="chat"; try{t=localStorage.getItem("tab")||"chat"}catch(e){} show(t); })();
+$("#samples").innerHTML = SAMPLES.map(([u,q],i) => `<button data-i="${i}">${esc(q.slice(0,58))}${q.length>58?"…":""}</button>`).join("");
+$("#samples").onclick = e => { const i = e.target.dataset.i; if (i===undefined) return; $("#persona").value = SAMPLES[i][0]; $("#q").value = SAMPLES[i][1]; ask(); };
+$("#send").onclick = ask; $("#q").onkeydown = e => { if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); ask(); } };
+async function ask(){ const q = $("#q").value.trim(); if(!q) return; $("#busy").textContent = "working…";
+  try { const r = await post("/api/chat", {user_id:$("#persona").value, message:q}); render(q, r); } catch(e){ alert(e.message); } $("#busy").textContent = ""; }
+function render(q, r){
+  const srcs = Object.entries(r.sources_searched||{}).map(([s,v]) => `<tr><td>${s}</td><td style="width:45%"><div class="gate"><div class="bar" style="width:${Math.max(2,v.top*100)}%;background:${v.above_gate?"var(--resolve)":"var(--muted)"}"></div><i style="left:${v.gate*100}%"></i></div></td><td>${v.top.toFixed(3)} ${v.above_gate?"✓":"below gate"}</td><td class="muted">${esc((v.hits||[]).slice(0,3).join(", "))}</td></tr>`).join("");
+  const card = document.createElement("div"); card.className = "card";
+  card.innerHTML = `<div class="muted">${esc($("#persona").selectedOptions[0].text)}</div><b>${esc(q)}</b>
+   <div style="margin-top:6px"><span class="chip r-${r.route}">${r.route}</span> <span class="muted">${r.latency_ms} ms · plan: ${esc(r.plan?.intent)} · tools: ${esc((r.tools_called||[]).join(", ")||"none")}${r.redacted?.length?" · redacted: "+r.redacted.join(", "):""}</span></div>
+   <div class="msg">${esc(r.answer)}</div>
+   ${r.pending ? `<div class="card" style="border-color:var(--raise)"><b>Confirm before submitting</b><pre>${esc(JSON.stringify(r.pending.args,null,1))}</pre><button class="go warn" data-c="1">Confirm and submit</button> <button class="go" style="background:var(--muted)" data-c="0">Cancel</button><span class="muted" data-out></span></div>`:""}
+   ${(r.findings||[]).length?`<details><summary>Findings from tools (${r.findings.length})</summary><ul>${r.findings.map(f=>`<li>${esc(f.text)} <span class="muted">[${esc(f.source)}]</span></li>`).join("")}</ul></details>`:""}
+   ${srcs?`<details><summary>RAG sources searched (${Object.keys(r.sources_searched).length})</summary><table>${srcs}</table></details>`:""}`;
+  card.querySelectorAll("[data-c]").forEach(b => b.onclick = async () => { const out = await post("/api/confirm", {pending:r.pending, approve:b.dataset.c==="1"}); card.querySelector("[data-out]").textContent = " " + (out.result||"cancelled"); card.querySelectorAll("[data-c]").forEach(x=>x.disabled=true); });
+  $("#answers").prepend(card); }
+const COLORS = {knowledge_gap:"var(--gap)",user_education:"var(--resolve)",defect:"var(--raise)",access_permission:"var(--tool)",routing_config:"var(--decide)",data_issue:"#7C8AA5",outage_performance:"#B5544A",duplicate_noise:"var(--muted)"};
+async function loadOps(){
+  try { const p = await api("/api/profile"); const max = Math.max(...Object.values(p.buckets));
+    $("#profmeta").textContent = `${p.n.toLocaleString()} incidents · accuracy ${(p.accuracy*100).toFixed(1)}% (95% CI ${(p.ci[0]*100).toFixed(1)}–${(p.ci[1]*100).toFixed(1)}) on ${p.held_out.toLocaleString()} held out`;
+    $("#buckets").innerHTML = `<table>${Object.entries(p.buckets).map(([b,n]) => `<tr><td>${b}</td><td style="width:55%"><div class="bar" style="width:${n/max*100}%;background:${COLORS[b]}"></div></td><td>${n.toLocaleString()}</td></tr>`).join("")}</table>`;
+    weekly(p.weekly);
+    $("#clusters").innerHTML = p.clusters.map(c => `<div style="margin:8px 0"><b>${c.size}</b> incidents · <i>${esc(c.top_words.join(", "))}</i><div class="muted">e.g. "${esc(c.examples[0].problem)}" → "${esc(c.examples[0].resolution.slice(0,120))}" · nearest doc ${esc(c.nearest_doc.id)} (${c.nearest_doc.similarity})</div></div>`).join("") || "none";
+    $("#contra").innerHTML = (p.contradictions||[]).map(c => `<p><b>${esc(c.doc)}</b> ${esc(c.title)} says ${c.doc_says.join(", ")} MB; ${c.incidents} resolutions say ${Object.keys(c.resolutions_say).join(", ")} MB.</p>`).join("") || "none";
+  } catch(e){ $("#buckets").textContent = "Profile not built yet: " + e.message; }
+  const l = await api("/api/live?region=" + encodeURIComponent((await api("/api/personas")).find(x=>x.userId===$("#persona").value)?.region||"SOUTH_CENTRAL"));
+  $("#live").innerHTML = `<table>${l.recent.map(r => `<tr><td>${r.number}</td><td>${r.priority}</td><td>${esc(r.short_description)}${r.major_incident==="true"?' <span class="chip r-raise">major</span>':""}${r.parent_incident?` <span class="muted">→ ${r.parent_incident}</span>`:""}</td><td class="muted">${r.sys_created_on.slice(11,16)}</td></tr>`).join("")}</table>`; }
+function weekly(w){ const weeks = Object.keys(w).slice(-26), bs = Object.keys(COLORS), W = 760, H = 180, bw = W/weeks.length;
+  const tot = weeks.map(k => bs.reduce((s,b)=>s+(w[k][b]||0),0)), mx = Math.max(...tot);
+  let svg = `<svg viewBox="0 0 ${W} ${H+20}" width="100%" role="img" aria-label="weekly incidents stacked by bucket">`;
+  weeks.forEach((k,i) => { let y = H; bs.forEach(b => { const h = (w[k][b]||0)/mx*H; y -= h; svg += `<rect x="${i*bw+1}" y="${y}" width="${bw-2}" height="${h}" fill="${COLORS[b]}"><title>${k} ${b}: ${w[k][b]||0}</title></rect>`; });
+    if (i%4===0) svg += `<text x="${i*bw}" y="${H+14}" font-size="10" fill="currentColor">${k}</text>`; });
+  $("#weekly").innerHTML = svg + "</svg>" + `<div class="muted">${bs.map(b=>`<span style="color:${COLORS[b]}">■</span> ${b}`).join(" &nbsp; ")}</div>`; }
+async function loadRag(){ const cs = await api("/api/rag/collections");
+  $("#cols").innerHTML = `<table><tr><th>collection</th><th>items</th><th>config</th></tr>${cs.map(c=>`<tr><td>${c.name}</td><td>${c.count.toLocaleString()}</td><td class="muted">${esc(JSON.stringify(c.metadata))}</td></tr>`).join("")}</table>`;
+  $("#src").innerHTML = ["kb_policy","kb_workflow","kb_ui","incident_resolutions","kb_drafts"].map(s=>`<option ${s==="kb_ui"?"selected":""}>${s}</option>`).join(""); }
+$("#rgo").onclick = async () => { const r = await api(`/api/rag/search?source=${$("#src").value}&q=${encodeURIComponent($("#rq").value)}`);
+  const col = (title, rows) => `<div><b>${title}</b><table>${rows}</table></div>`;
+  $("#rres").innerHTML = `<p class="muted">gate for ${r.source}: ${r.gate}</p><div class="row">` +
+   col("Vector (cosine)", r.vector.map((h,i)=>`<tr><td>${i+1}</td><td>${h.id}</td><td>${h.score.toFixed(3)}${h.score>=r.gate?" ✓":""}</td></tr>`).join("")) +
+   col("Keyword (BM25)", r.keyword.map((h,i)=>`<tr><td>${i+1}</td><td>${h.id}</td><td>${h.score}</td></tr>`).join("")) +
+   col("Hybrid (RRF)", r.hybrid.map((h,i)=>`<tr><td>${i+1}</td><td>${h.id}</td><td class="muted">v#${h.vector_rank??"–"} k#${h.keyword_rank??"–"}</td></tr>`).join("")) + `</div>` +
+   (r.vector[0] ? `<p class="muted">top vector hit metadata</p><pre>${esc(JSON.stringify(r.vector[0].meta,null,1))}\n\n${esc(r.vector[0].text)}</pre>` : ""); };
+async function loadDrafts(){ const d = await api("/api/drafts");
+  $("#drafts").innerHTML = `<div class="card"><b>Pending (${d.pending.length})</b>${d.pending.map(x=>`<div class="card"><b>${esc(x.title)}</b> <span class="muted">${esc(x.source)}</span><pre>${esc(x.text)}</pre><button class="go" data-a="${esc(x.file)}">Approve and index</button></div>`).join("")||"<p class='muted'>none</p>"}</div>
+   <div class="card"><b>Approved (${d.approved.length})</b>${d.approved.map(x=>`<div>✓ ${esc(x.title)} <span class="muted">${esc(x.source)}</span></div>`).join("")||"<p class='muted'>none</p>"}</div>`;
+  document.querySelectorAll("[data-a]").forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = "indexing…"; await post(`/api/drafts/${encodeURIComponent(b.dataset.a)}/approve`); loadDrafts(); }); }
+$("#gen").onclick = async () => { $("#gen").disabled = true; await post("/api/drafts/generate"); $("#gen").disabled = false; loadDrafts(); };
+document.querySelectorAll("[data-r]").forEach(b => b.onclick = async () => { try { $("#rep").textContent = await api("/api/reports/" + b.dataset.r); } catch(e){ $("#rep").textContent = "Not available yet."; } });
+</script>
+</body>
+</html>
