@@ -151,7 +151,7 @@ def _snippet(text: str, n: int = 260) -> str:
     body = re.sub(r"^#+ .*$", "", body, flags=re.M)
     body = re.sub(r"\*\*|`|^\s*[-*]\s+|^\s*\d+\.\s+", "", body, flags=re.M)          # plain text: no markdown in a chat answer
     body = re.sub(r"\s+", " ", body).strip()
-    return body[:n].rsplit(" ", 1)[0] + ("..." if len(body) > n else "")
+    return body if len(body) <= n else body[:n].rsplit(" ", 1)[0] + "..."
 
 
 def _workaround(m: dict) -> str:

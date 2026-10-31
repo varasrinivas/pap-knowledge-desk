@@ -22,7 +22,7 @@ triage (agent, output_schema=Triage)
   └▶ Parallel "gather"   rag_kb_policy · rag_kb_workflow · rag_kb_ui · rag_incident_resolutions · rag_kb_drafts
                          tool_access · tool_routing · tool_live · tool_region_status · tool_request
        └▶ decide (code: the gate)  →  route + findings + ticket proposal + dedup check
-            └▶ compose (agent)  →  cited answer
+            └▶ compose (agent)  →  cited answer  →  desk/guard.py checks the reply (cited, grounded, length, identifiers, promises, clinical)
                  └▶ Router "act"   answer | raise (agent + @tool(requires_confirmation=True): the run pauses) | dedup (work note) | gap (log + answer from history)
 ```
 
@@ -66,3 +66,5 @@ triage (agent, output_schema=Triage)
 5. `compose` writes the answer, citing sources such as `[UI-05]`, `[INC0030001]` and `[portal:routing]`.
 6. `act` ends the turn. The JSON reply carries the route, answer, citations, tools called, the sources searched (with their top score
    and gate), and any pending confirmation.
+
+The system prompt of each agent, its input and what enforces each of its rules: `docs/AGENT-PROMPTS.md`.

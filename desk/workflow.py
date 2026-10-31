@@ -19,15 +19,16 @@ from datetime import datetime, timezone
 
 from agno.run import RunContext
 from agno.workflow import Parallel, Router, Step, StepInput, StepOutput, Workflow
+from pydantic import ValidationError
 
-from desk import config, tools
-from desk.agents import agent, db
+from desk import config, fixture_logic, guard, tools
+from desk.agents import Triage, agent, db
 from desk.rag.search import retrieve
 from desk.redact import redact
 from desk.world import iso, now, region_for_zip, routing_rules, users
 
 DOC_SOURCES = ["kb_policy", "kb_workflow", "kb_ui", "kb_drafts"]
-CITE = re.compile(r"\[((?:POL|WF|UI|DRAFT|FIX)-\d{2}|INC\d{7}|portal:\w+|servicenow:\w+)")
+CITE = guard.CITE
 GAPS_FILE = config.RUNTIME_DIR / "gaps.jsonl"
 OPEN_STATES = ("New", "In Progress", "On Hold")
 
@@ -45,8 +46,19 @@ def triage(step_input: StepInput, run_context: RunContext) -> StepOutput:
     run_context.session_state["turn"] = turn = {"message": text, "redacted": kinds, "user_id": req["user_id"], "user": user,
                                                 "t0": t0, "evidence": {}, "tools_called": [], "sources_searched": {}}
     r = agent("triage").run(json.dumps({"message": text, "role": user.get("role", "")}))
-    turn["plan"] = r.content.model_dump() if hasattr(r.content, "model_dump") else dict(r.content)
+    turn["plan"], turn["plan_repaired"] = valid_plan(r.content, text, user.get("role", ""))
     return StepOutput(content=json.dumps(turn["plan"]))
+
+
+def valid_plan(content, message: str, role: str) -> tuple[dict, bool]:
+    """The Triage schema is the contract: a plan that does not validate is replaced by the keyword planner's, and flagged."""
+    if isinstance(content, Triage):
+        return content.model_dump(), False
+    try:
+        raw = json.loads(content) if isinstance(content, str) else dict(content)
+        return Triage.model_validate(raw).model_dump(), False
+    except (ValueError, TypeError, ValidationError):
+        return Triage.model_validate(fixture_logic.plan(message, role)).model_dump(), True
 
 
 # ---------------- 2. gather (run in parallel) ----------------
@@ -274,22 +286,38 @@ def decide(step_input: StepInput, run_context: RunContext) -> StepOutput:
 
 
 # ---------------- 4. compose ----------------
+HIT_META = ("source_id", "title", "section", "region", "bucket_pred")      # what the compose prompt can use; hashes and paths are not
+
+
+def slim(h: dict) -> dict:
+    """One retrieval hit, cut to what the reply needs: the id to cite, the text, and the labels a citation names."""
+    meta = h.get("meta") or {}
+    return {"id": h["id"], "score": h.get("score"), "text": h["text"], "meta": {k: meta[k] for k in HIT_META if k in meta}}
+
+
+
 def compose(step_input: StepInput, run_context: RunContext) -> StepOutput:
     turn = T(run_context)
-    pack = {"route": turn["route"], "findings": turn["findings"], "refuse_reason": turn["plan"].get("refuse_reason"),
+    full = {"route": turn["route"], "findings": turn["findings"], "refuse_reason": turn["plan"].get("refuse_reason"),
             "clarify_question": turn["plan"].get("clarify_question"), "doc_hits": turn["doc_hits"], "incident_hits": turn["incident_hits"],
             "live": turn["evidence"].get("live"), "ticket_proposal": turn["ticket_proposal"], "duplicate": turn["duplicate"],
             "use_docs": turn["route"] not in ("raise",) or not turn["findings"]}
+    pack = {**full, "doc_hits": [slim(h) for h in full["doc_hits"]], "incident_hits": [slim(h) for h in full["incident_hits"]]}
+    turn["pack_chars"] = {"full": len(json.dumps(full, default=str)), "sent": len(json.dumps(pack, default=str))}
     r = agent("compose").run(json.dumps(pack, default=str))
-    turn["answer"] = r.content
-    return StepOutput(content=r.content)
+    answer = r.content or ""
+    turn["guard"] = g = guard.check(answer, pack)                     # the prompt asked; the guard checks
+    if g["blocking"]:
+        answer, g["replaced"] = fixture_logic.compose(pack), True       # safe fallback: the deterministic composer
+    turn["answer"] = answer
+    return StepOutput(content=answer)
 
 
 # ---------------- 5. act ----------------
 def _result(turn: dict) -> StepOutput:
     cites = sorted(set(CITE.findall(turn.get("answer", ""))))
     out = {k: turn.get(k) for k in ("route", "answer", "plan", "findings", "tools_called", "sources_searched", "ticket", "pending",
-                                     "duplicate", "redacted", "gap")}
+                                     "duplicate", "redacted", "gap", "guard", "plan_repaired", "pack_chars")}
     out["citations"] = cites
     out["latency_ms"] = int((time.time() - turn["t0"]) * 1000)
     return StepOutput(content=json.dumps(out, default=str))

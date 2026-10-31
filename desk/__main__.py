@@ -8,6 +8,7 @@
   ask --user u-priya "..."    one question through the Agno workflow
   eval [--scenarios]          the labelled scenarios: route, sources, tools, citations
   knowledge-fix --demo        gap cluster -> draft -> approve -> re-index -> re-run the gap questions
+  prompt-lab [--inputs] [--md] [--live]   the four system prompts as contracts: anatomy, reply guard, schema, inputs
   ingest                      what the ingest container runs: build-rag + profile + gates (skips work already done)
   health                      every service's health
 """
@@ -37,6 +38,8 @@ def main(argv=None):
     a = sub.add_parser("ask"); a.add_argument("--user", default="u-priya"); a.add_argument("message"); a.add_argument("--confirm", action="store_true")
     e = sub.add_parser("eval"); e.add_argument("--scenarios", action="store_true"); e.add_argument("--only")
     k = sub.add_parser("knowledge-fix"); k.add_argument("--demo", action="store_true")
+    pl = sub.add_parser("prompt-lab"); pl.add_argument("--inputs", action="store_true"); pl.add_argument("--md", action="store_true")
+    pl.add_argument("--live", action="store_true")
     sub.add_parser("ingest")
     sub.add_parser("health")
     args = ap.parse_args(argv)
@@ -69,6 +72,9 @@ def main(argv=None):
     elif args.cmd == "knowledge-fix":
         from desk.knowledge_fix import demo
         demo()
+    elif args.cmd == "prompt-lab":
+        from desk.prompt_lab import run
+        run(inputs=args.inputs, md=args.md, live=args.live)
     elif args.cmd == "ingest":
         from desk.ingest import run
         run()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
@@ -12,12 +12,17 @@ from pydantic import BaseModel, Field
 from desk import config, tools
 from desk.fixture_model import FixtureModel
 
+# Closed menus: a plan that names an intent, source or tool decide() does not handle fails validation instead of passing silently.
+Intent = Literal["how_to", "policy_question", "access_problem", "access_request", "routing_problem", "outage_check",
+                 "defect_report", "data_problem", "clinical_advice", "decision_change", "injection", "unclear"]
+Source = Literal["kb_policy", "kb_workflow", "kb_ui", "incident_resolutions", "kb_drafts"]
+ToolName = Literal["access", "routing", "live", "request", "region_status"]
+
 
 class Triage(BaseModel):
-    intent: str = Field(description="how_to | policy_question | access_problem | access_request | routing_problem | outage_check | "
-                                    "defect_report | data_problem | clinical_advice | decision_change | injection | unclear")
-    sources: list[str] = Field(default_factory=list, description="RAG collections to search: kb_policy, kb_workflow, kb_ui, incident_resolutions, kb_drafts")
-    tools: list[str] = Field(default_factory=list, description="tools to call: access, routing, live, request, region_status")
+    intent: Intent = Field(description="what the user needs; one of the listed values")
+    sources: list[Source] = Field(default_factory=list, description="RAG collections to search: kb_policy, kb_workflow, kb_ui, incident_resolutions, kb_drafts")
+    tools: list[ToolName] = Field(default_factory=list, description="tools to call: access, routing, live, request, region_status")
     keywords: list[str] = Field(default_factory=list, description="one or two words for the live-incident search, e.g. fax, upload")
     request_id: Optional[str] = None
     action: Optional[str] = Field(None, description="portal permission to check, e.g. intake.submit")
@@ -45,7 +50,7 @@ Input: JSON with the message and the user's role. Output: the Triage schema only
 
 COMPOSE = """ROLE: compose
 You write the reply to a nurse or office manager from the evidence pack (JSON). Rules:
-- Use only facts in the evidence pack. End every factual sentence with its source in brackets: [POL-08], [UI-05: Adding attachments], [INC0012345], [portal:access].
+- Use only facts in the evidence pack. End every line that states a fact with its source in brackets: [POL-08], [UI-05: Adding attachments], [INC0012345], [portal:access].
 - Follow the route: resolve = answer; link_live = name the open incident and its workaround, no new ticket; raise / raise_access = say what will
   be submitted and that it needs their confirmation; dedup = say it is already open and the report was added; gap_resolve = say no document
   covers it and give what resolved it for others; refuse / clarify = one or two sentences.

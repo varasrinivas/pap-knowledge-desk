@@ -71,3 +71,30 @@ def test_planner_guards_and_routes():
 def test_redaction():
     text, kinds = redact("Member NW-1234567, call 214-555-0187")
     assert "NW-1234567" not in text and "214-555-0187" not in text and set(kinds) == {"member_id", "phone"}
+
+
+def test_reply_guard_catches_every_broken_reply_and_passes_good_ones():
+    from desk import prompt_lab
+    from desk.guard import check
+    for case, rule, reply in prompt_lab.BROKEN:
+        assert rule in check(reply, prompt_lab.PACK)["failed"], case
+    for case, pack, reply in prompt_lab.GOOD:
+        assert check(reply, pack)["ok"], case
+
+
+def test_literal_schema_rejects_plans_decide_cannot_handle():
+    from desk import prompt_lab
+    from desk.agents import Triage
+    from desk.workflow import valid_plan
+    for case, plan in prompt_lab.BAD_PLANS:
+        assert not prompt_lab._accepts(Triage, plan), case
+        assert valid_plan(plan, "How do I upload clinical notes?", "PROVIDER_NURSE")[1], case
+    assert valid_plan(fixture_logic.plan("Fax intake isn't working today."), "x", "PROVIDER_NURSE")[1] is False
+
+
+def test_agent_prompts_doc_quotes_every_prompt():
+    from pathlib import Path
+    from desk import agents
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "AGENT-PROMPTS.md").read_text(encoding="utf-8")
+    for text in (agents.TRIAGE, agents.COMPOSE, agents.RAISE, agents.ARTICLE):
+        assert text in doc

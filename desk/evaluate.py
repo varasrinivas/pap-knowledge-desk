@@ -51,7 +51,7 @@ def run(only: str | None = None) -> dict:
     fixed = drafts_present()
     if fixed:
         print("kb_drafts has approved articles: gap scenarios use their after_fix expectations\n")
-    print(f"{'id':5s} {'route':12s} {'want':22s} {'src':>3s} {'tool':>4s} {'cite':>4s} {'ms':>6s}  result")
+    print(f"{'id':5s} {'route':12s} {'want':22s} {'src':>3s} {'tool':>4s} {'cite':>4s} {'grd':>3s} {'ms':>6s}  result")
     for s in SCEN:
         if only and s["id"] != only:
             continue
@@ -61,22 +61,27 @@ def run(only: str | None = None) -> dict:
         if s.get("confirm") and r.get("pending"):
             r["confirmed"] = confirm(r["pending"])
         c = check(s, r)
-        rows.append({"id": s["id"], **c, "got": r["route"], "latency_ms": r["latency_ms"], "answer": r["answer"],
+        g = r.get("guard") or {"ok": True, "failed": []}
+        rows.append({"id": s["id"], **c, "got": r["route"], "latency_ms": r["latency_ms"], "answer": r["answer"], "guard": g,
                      "citations": r.get("citations"), "tools_called": r.get("tools_called"), "searched": list((r.get("sources_searched") or {}).keys())})
         mark = lambda b: "ok" if b else "--"
         print(f"{s['id']:5s} {r['route']:12s} {'/'.join(s['route']):22s} {mark(c['sources']):>3s} {mark(c['tools']):>4s} "
-              f"{mark(c['cite']):>4s} {r['latency_ms']:6d}  {'PASS' if c['pass'] else 'FAIL'}")
+              f"{mark(c['cite']):>4s} {mark(g['ok']):>3s} {r['latency_ms']:6d}  {'PASS' if c['pass'] else 'FAIL'}")
     n = len(rows)
     passed = [1.0 if x["pass"] else 0.0 for x in rows]
     lo, hi = bootstrap_ci(passed) if n > 1 else (0, 0)
     route_acc = sum(x["route"] for x in rows) / max(1, n)
     lat = sorted(x["latency_ms"] for x in rows)
-    out = {"n": n, "pass_rate": sum(passed) / max(1, n), "ci": [lo, hi], "route_accuracy": route_acc,
+    guard_ok = sum(1 for x in rows if x["guard"]["ok"])
+    out = {"n": n, "guard_pass": guard_ok, "pass_rate": sum(passed) / max(1, n), "ci": [lo, hi], "route_accuracy": route_acc,
            "p50_ms": lat[len(lat) // 2] if lat else 0, "rows": rows}
     (config.RUNTIME_DIR / "eval.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     fails = [x for x in rows if not x["pass"]]
+    for x in rows:
+        if not x["guard"]["ok"]:
+            print(f"  GUARD {x['id']}: " + ", ".join(x["guard"]["failed"]) + f" {x['guard'].get('detail')}")
     for f in fails:
         print(f"  FAIL {f['id']}: got {f['got']} · " + ", ".join(k for k in ("route", "sources", "tools", "cite", "redaction") if not f[k]) + " failed")
     print(f"\ndesk_eval: {sum(passed):.0f}/{n} pass ({out['pass_rate']:.0%}, 95% CI {lo:.0%}-{hi:.0%}) · route accuracy {route_acc:.0%} · "
-          f"p50 latency {out['p50_ms']} ms · model {'live' if config.live_llm() else 'fixture'} · {time.time() - t0:.0f}s")
+          f"reply guard {guard_ok}/{n} · p50 latency {out['p50_ms']} ms · model {'live' if config.live_llm() else 'fixture'} · {time.time() - t0:.0f}s")
     return out

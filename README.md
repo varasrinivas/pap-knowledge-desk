@@ -56,6 +56,7 @@ Use a model id you have verified on Anthropic's models page. Redaction runs befo
 - `docs/ARCHITECTURE.md`: the containers, the workflow, and how data moves.
 - `docs/RAG-BUILD.md`: how the RAG databases are built, stage by stage, with real numbers.
 - `docs/RUNBOOK.md`: operating, troubleshooting and resetting.
+- `docs/AGENT-PROMPTS.md`: the four agents' system prompts, the exact JSON each one receives, and what enforces each rule (the schema, the reply guard, code or a person). Regenerate it with `python -m desk prompt-lab --md`.
 - `docs/VERSIONS.md`: verified versions and the facts the docs did not state.
 - `data/kb/CANON.md`: the fictional world.
 - `data/kb/PLANTED.md`: the deliberate gaps and stale facts.
